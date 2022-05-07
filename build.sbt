@@ -8,7 +8,7 @@ ThisBuild / organizationName := "bank"
 lazy val root = (project in file("."))
   .settings(
     name := "banking-app",
-    libraryDependencies += AkkaHttp,
+    libraryDependencies ++= List(AkkaStreams, AkkaActors, AkkaHttp, AkkaSpray, SprayJson),
     libraryDependencies += scalaTest % Test
   )
 
