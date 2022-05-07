@@ -27,6 +27,18 @@ class Controller extends DefaultJsonProtocol with SprayJsonSupport {
     }
   }
 
-  def allRoutes: Route = createAccount
+  def getAccount: Route = get {
+    path ("api" / "accounts" / Segment) { accountNumber=>
+      accounts.find(_.accountNumber == accountNumber) match {
+        case Some(accountFound)=>
+          complete(OK, s"Account found: ${accountFound.toJson}".toJson )
+        case None=>
+          complete(NotFound, s"Account number $accountNumber was not found".toJson)
+      }
+    }
+  }
+
+  def allRoutes: Route =
+    createAccount ~ getAccount
 
 }
