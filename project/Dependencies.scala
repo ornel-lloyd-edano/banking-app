@@ -13,4 +13,6 @@ object Dependencies {
 
   val SprayVersion = "1.3.6"
   val SprayJson = "io.spray" %%  "spray-json" % SprayVersion
+
+  val TypeSafeConfig = "com.typesafe" % "config" % "1.4.2"
 }
