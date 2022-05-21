@@ -18,7 +18,7 @@ class Controller extends DefaultJsonProtocol with SprayJsonSupport {
     )
   )
 
-  def createAccount: Route = post {
+  def createAccount = post {
     path("api" / "accounts" ) {
       entity(as[Account]) { account=>
         accounts = accounts :+ account
@@ -27,7 +27,7 @@ class Controller extends DefaultJsonProtocol with SprayJsonSupport {
     }
   }
 
-  def getAccount: Route = get {
+  def getAccountByAccountNum: Route = get {
     path ("api" / "accounts" / Segment) { accountNumber=>
       accounts.find(_.accountNumber == accountNumber) match {
         case Some(accountFound)=>
@@ -39,6 +39,6 @@ class Controller extends DefaultJsonProtocol with SprayJsonSupport {
   }
 
   def allRoutes: Route =
-    createAccount ~ getAccount
+    createAccount ~ getAccountByAccountNum
 
 }

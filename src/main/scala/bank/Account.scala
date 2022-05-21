@@ -1,9 +1,11 @@
 package bank
 
+import bank.Account.AccountNumber
 import spray.json.DefaultJsonProtocol._
 
+
 case class Account(
-  accountNumber: String,
+  accountNumber: AccountNumber,
   currentBalance: Double,
   currency: String,
   customerFirstName: String,
@@ -11,5 +13,6 @@ case class Account(
 )
 
 object Account {
+  type AccountNumber = String
   implicit val formatter = jsonFormat5(Account.apply)
 }
