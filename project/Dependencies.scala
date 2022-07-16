@@ -29,4 +29,6 @@ object Dependencies {
     "org.webjars" % "swagger-ui" % "4.6.2"
   )
 
+  val MariaDB = "org.mariadb.jdbc" % "mariadb-java-client" % "3.0.6"
+
 }

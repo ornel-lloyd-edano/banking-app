@@ -3,6 +3,7 @@ package bank
 import akka.actor._
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.server.RouteConcatenation
+import bank.controller.Controller
 import bank.swagger.SwaggerDocService
 import com.typesafe.config.ConfigFactory
 
