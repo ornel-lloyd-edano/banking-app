@@ -1,28 +1,29 @@
-package bank
+package bank.controller
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.server.{Directives, Route}
+import bank.domain.Account
 import io.swagger.v3.oas.annotations.enums.ParameterIn
 import io.swagger.v3.oas.annotations.media.{Content, Schema}
 import io.swagger.v3.oas.annotations.parameters.RequestBody
 import io.swagger.v3.oas.annotations.responses.ApiResponse
 import io.swagger.v3.oas.annotations.{Operation, Parameter}
 import jakarta.ws.rs.core.MediaType
-import jakarta.ws.rs.{Consumes, GET, POST, Path, Produces}
+import jakarta.ws.rs._
 import spray.json._
 
 
 class Controller extends Directives with DefaultJsonProtocol with SprayJsonSupport {
 
   private var accounts = List[Account](
-    Account(
+    /*Account(
       accountNumber = "123",
       currentBalance = 9999,
       currency = "PHP",
       customerFirstName = "Lloyd",
       customerLastName = "Edano"
-    )
+    )*/
   )
 
   @POST

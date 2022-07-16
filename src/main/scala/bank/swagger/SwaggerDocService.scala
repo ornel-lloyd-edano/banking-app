@@ -1,6 +1,6 @@
 package bank.swagger
 
-import bank.Controller
+import bank.controller.Controller
 import com.github.swagger.akka.model.Info
 import com.typesafe.config.ConfigFactory
 import io.swagger.v3.oas.models.ExternalDocumentation
