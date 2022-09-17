@@ -1,18 +1,15 @@
 package bank.domain
 
 import spray.json.DefaultJsonProtocol._
-
-import scala.util.Try
+import spray.json.RootJsonFormat
 
 case class Account(
+  accountNumber: String,
   accountType: AccountType,
-  currentBalance: Double,
-  status: AccountStatus
-) {
-  def accountNumber: Option[String] = ???
-  def validate: Try[Unit] = ???
-}
+  status: AccountStatus,
+  balance: BigDecimal
+)
 
 object Account {
-  implicit val formatter = jsonFormat3(Account.apply)
+  implicit val format: RootJsonFormat[Account] = jsonFormat4(Account.apply)
 }

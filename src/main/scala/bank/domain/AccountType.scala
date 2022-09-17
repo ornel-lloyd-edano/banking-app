@@ -20,6 +20,16 @@ object AccountType {
     override val minRequiredBalance: Double = 100000
   }
 
+  def fromString(accountType: String): AccountType = {
+    accountType match {
+      case "Savings"=> Savings
+      case "Current"=> Current
+      case "Dollar"=> Dollar
+      case "TimeDeposit"=> TimeDeposit
+      case other=> throw DeserializationException(s"Account type [$other] is not recognized")
+    }
+  }
+
   implicit val format: RootJsonFormat[AccountType] = new RootJsonFormat[AccountType] {
     override def write(obj: AccountType): JsValue = {
       JsString(obj.getClass.getSimpleName)
@@ -27,14 +37,7 @@ object AccountType {
 
     override def read(json: JsValue): AccountType = {
       json match {
-        case JsString(value)=>
-          value match {
-            case "Savings"=> Savings
-            case "Current"=> Current
-            case "Dollar"=> Dollar
-            case "TimeDeposit"=> TimeDeposit
-            case other=> throw DeserializationException(s"Account type [$other] is not recognized")
-          }
+        case JsString(value)=> fromString(value)
         case _=> throw DeserializationException("Account type must be JsString")
       }
     }

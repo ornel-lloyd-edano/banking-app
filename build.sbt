@@ -15,7 +15,8 @@ lazy val root = (project in file("."))
       AkkaSpray,
       SprayJson,
       TypeSafeConfig,
-      MariaDB) ++ Swagger,
+      MariaDB,
+      HikariCP) ++ Swagger,
     libraryDependencies ++= List(scalaTest % Test, AkkaStreamTest % Test, AkkaHttpTest % Test)
   )
 

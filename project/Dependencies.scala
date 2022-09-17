@@ -31,4 +31,6 @@ object Dependencies {
 
   val MariaDB = "org.mariadb.jdbc" % "mariadb-java-client" % "3.0.6"
 
+  val HikariCP = "com.zaxxer" % "HikariCP" % "2.3.2"
+
 }

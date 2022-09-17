@@ -1,9 +1,13 @@
 package bank.controller
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import akka.http.scaladsl.model.StatusCodes._
+import akka.http.scaladsl.model.StatusCodes.{Created, InternalServerError, NotFound, OK}
 import akka.http.scaladsl.server.{Directives, Route}
-import bank.domain.Account
+import bank.controller.dto.{CustomerAccount, RegisterAccount}
+import bank.domain.{ContactNumber, CustomerDocument, CustomerProfile, Email, FullAddress, Gender}
+import bank.persistence
+import bank.persistence.{AccountDAO, AccountJDBCDAO, AddressDAO, CustomerProfileDAO, CustomerProfileJDBCDAO, Datasource, HikariCPDatasource}
+import com.typesafe.config.{Config, ConfigFactory}
 import io.swagger.v3.oas.annotations.enums.ParameterIn
 import io.swagger.v3.oas.annotations.media.{Content, Schema}
 import io.swagger.v3.oas.annotations.parameters.RequestBody
@@ -13,18 +17,17 @@ import jakarta.ws.rs.core.MediaType
 import jakarta.ws.rs._
 import spray.json._
 
+import java.time.LocalDate
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
-class Controller extends Directives with DefaultJsonProtocol with SprayJsonSupport {
 
-  private var accounts = List[Account](
-    /*Account(
-      accountNumber = "123",
-      currentBalance = 9999,
-      currency = "PHP",
-      customerFirstName = "Lloyd",
-      customerLastName = "Edano"
-    )*/
-  )
+class Controller(implicit ec: ExecutionContext,
+                 config: Config,
+                 accountDAO: AccountDAO,
+                 customerProfileDAO: CustomerProfileDAO,
+                 addressDAO: AddressDAO) extends Directives with DefaultJsonProtocol with SprayJsonSupport {
+
 
   @POST
   @Path("/api/accounts")
@@ -32,16 +35,36 @@ class Controller extends Directives with DefaultJsonProtocol with SprayJsonSuppo
   @Produces(Array(MediaType.APPLICATION_JSON))
   @Operation(summary = "Create new customer account",
     requestBody = new RequestBody(required = true,
-      content = Array(new Content(schema = new Schema(implementation = classOf[Account])))),
+      content = Array(new Content(schema = new Schema(implementation = classOf[RegisterAccount])))),
     responses = Array(
       new ApiResponse(responseCode = "200", description = "Account created"),
       new ApiResponse(responseCode = "500", description = "Internal server error"))
   )
   def createAccount: Route = post {
     path("api" / "accounts" ) {
-      entity(as[Account]) { account=>
-        accounts = accounts :+ account
-        complete(Created, "Account created".toJson )
+      entity(as[RegisterAccount]) { registerAccount=>
+
+        val customerProfile = CustomerProfile(
+          customerFirstName = registerAccount.firstName,
+          customerMiddleName = registerAccount.middleName,
+          customerLastName = registerAccount.lastName,
+          loginUserName = registerAccount.userName,
+          password = registerAccount.password,
+          gender = registerAccount.gender,
+          dateOfBirth = registerAccount.dateOfBirth,
+          address = Some(registerAccount.address),
+          email = Email(registerAccount.email, isVerified = true),
+          contactNumber = ContactNumber(registerAccount.contactNumber, isVerified = true),
+          documents = List(),
+          accounts = List()
+        )
+
+        onComplete( customerProfile.openAccount(registerAccount.accountType).map(_.get)) {
+          case Success(_)=>
+            complete(Created, "Account created".toJson)
+          case Failure(ex)=>
+            complete(InternalServerError, s"Reason: ${ex.getMessage}".toJson)
+        }
       }
     }
   }
@@ -57,18 +80,24 @@ class Controller extends Directives with DefaultJsonProtocol with SprayJsonSuppo
     ),
     responses = Array(
       new ApiResponse(responseCode = "200", description = "Customer's Account",
-        content = Array(new Content(schema = new Schema(implementation = classOf[Account])))),
+        content = Array(new Content(schema = new Schema(implementation = classOf[CustomerAccount])))),
       new ApiResponse(responseCode = "400", description = "Invalid account number supplied"),
       new ApiResponse(responseCode = "404", description = "Account not found")
     )
   )
   def getAccountByAccountNum: Route = get {
     path ("api" / "accounts" / Segment) { accountNumber=>
-      accounts.find(_.accountNumber == accountNumber) match {
-        case Some(accountFound)=>
-          complete(OK, accountFound.toJson)
-        case None=>
-          complete(NotFound, s"Account number $accountNumber was not found".toJson)
+
+      CustomerProfile.searchByAccountNumber(accountNumber)
+      onComplete( CustomerProfile.searchByAccountNumber(accountNumber)) {
+        case Success(Some(Success(account)))=>
+          complete(OK, account.toJson)
+        case Success(Some(Failure(ex)))=>
+          complete(InternalServerError, s"Reason: ${ex.getMessage}".toJson)
+        case Success(None)=>
+          complete(NotFound,  s"Account number $accountNumber was not found".toJson)
+        case Failure(ex)=>
+          complete(InternalServerError, s"Reason: ${ex.getMessage}".toJson)
       }
     }
   }
