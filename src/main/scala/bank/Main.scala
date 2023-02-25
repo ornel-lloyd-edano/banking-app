@@ -11,7 +11,6 @@ import com.typesafe.config.ConfigFactory
 import scala.concurrent.ExecutionContext.Implicits.global
 
 object Main extends App with RouteConcatenation {
-  println("Welcome to Banking App")
 
   implicit val actorSystem = ActorSystem()
   implicit val config = ConfigFactory.load()
@@ -25,6 +24,8 @@ object Main extends App with RouteConcatenation {
   val appHost = config.getString("banking-app.host")
   val appPort = config.getInt("banking-app.port")
 
-  Http().newServerAt(appHost, appPort).bind(SwaggerDocService.routes ~ controller.allRoutes)
+  Http().newServerAt(appHost, appPort)
+    .bind(SwaggerDocService.routes ~ controller.allRoutes)
+    .foreach(_=> println("Welcome to Banking App"))
 
 }

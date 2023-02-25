@@ -1,11 +1,11 @@
 package bank.persistence
 
-import java.sql.{Date, DriverManager}
+import java.sql.{Date, DriverManager, Statement}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.ExecutionContext.Implicits.global
 
-class CustomerProfileJDBCDAO(implicit datasource: Datasource) extends CustomerProfileDAO {
+class CustomerProfileJDBCDAO(implicit val datasource: Datasource) extends CustomerProfileDAO {
 
   private val createTblSql = """
     |CREATE TABLE IF NOT EXISTS CUSTOMER_PROFILE(
@@ -72,7 +72,7 @@ class CustomerProfileJDBCDAO(implicit datasource: Datasource) extends CustomerPr
           |(customer_first_name, customer_middle_name, customer_last_name,
           |login_username, gender, birth_date)
           |VALUES (?, ?, ?, ?, ?, ?)
-          |""".stripMargin)
+          |""".stripMargin, Statement.RETURN_GENERATED_KEYS)
 
       statement.setString(1, cp.customer_first_name)
       //NOTE: must prove in unit test that not replacing ? in prepared statement means NULL value in the row
@@ -85,8 +85,12 @@ class CustomerProfileJDBCDAO(implicit datasource: Datasource) extends CustomerPr
       statement.setDate(6, cp.birth_date)
       statement.execute()
 
+      val keys = statement.getGeneratedKeys
+      keys.next()
+      keys.getLong(1)
+
     } match {
-      case Success(_)=> 1
+      case Success(id)=> id.toInt
       case Failure(exception)=>
         exception.printStackTrace()
         -1

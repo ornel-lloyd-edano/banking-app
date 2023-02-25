@@ -1,9 +1,11 @@
 package bank.controller
 
+import akka.actor.ActorSystem
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import akka.http.scaladsl.model.StatusCodes.{Created, InternalServerError, NotFound, OK}
+import akka.http.scaladsl.model.StatusCodes.{BadRequest, Created, InternalServerError, NotFound, OK}
 import akka.http.scaladsl.server.{Directives, Route}
 import bank.controller.dto.{CustomerAccount, RegisterAccount}
+import bank.domain.exceptions.ValidationException
 import bank.domain.{ContactNumber, CustomerDocument, CustomerProfile, Email, FullAddress, Gender}
 import bank.persistence
 import bank.persistence.{AccountDAO, AccountJDBCDAO, AddressDAO, CustomerProfileDAO, CustomerProfileJDBCDAO, Datasource, HikariCPDatasource}
@@ -19,14 +21,15 @@ import spray.json._
 
 import java.time.LocalDate
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 
 class Controller(implicit ec: ExecutionContext,
                  config: Config,
                  accountDAO: AccountDAO,
                  customerProfileDAO: CustomerProfileDAO,
-                 addressDAO: AddressDAO) extends Directives with DefaultJsonProtocol with SprayJsonSupport {
+                 addressDAO: AddressDAO,
+                 actorSystem: ActorSystem) extends Directives with DefaultJsonProtocol with SprayJsonSupport {
 
 
   @POST
@@ -52,16 +55,18 @@ class Controller(implicit ec: ExecutionContext,
           password = registerAccount.password,
           gender = registerAccount.gender,
           dateOfBirth = registerAccount.dateOfBirth,
-          address = Some(registerAccount.address),
+          address = registerAccount.address,
           email = Email(registerAccount.email, isVerified = true),
           contactNumber = ContactNumber(registerAccount.contactNumber, isVerified = true),
           documents = List(),
           accounts = List()
         )
 
-        onComplete( customerProfile.openAccount(registerAccount.accountType).map(_.get)) {
+        onComplete( customerProfile.openAccount(registerAccount.accountType).map(_.get) ) {
           case Success(_)=>
             complete(Created, "Account created".toJson)
+          case Failure(ex: ValidationException)=>
+            complete(BadRequest, s"Reason: ${ex.getMessage}".toJson)
           case Failure(ex)=>
             complete(InternalServerError, s"Reason: ${ex.getMessage}".toJson)
         }
@@ -88,7 +93,6 @@ class Controller(implicit ec: ExecutionContext,
   def getAccountByAccountNum: Route = get {
     path ("api" / "accounts" / Segment) { accountNumber=>
 
-      CustomerProfile.searchByAccountNumber(accountNumber)
       onComplete( CustomerProfile.searchByAccountNumber(accountNumber)) {
         case Success(Some(Success(account)))=>
           complete(OK, account.toJson)

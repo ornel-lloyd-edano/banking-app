@@ -31,6 +31,11 @@ object Dependencies {
 
   val MariaDB = "org.mariadb.jdbc" % "mariadb-java-client" % "3.0.6"
 
-  val HikariCP = "com.zaxxer" % "HikariCP" % "2.3.2"
+  val HikariCP = "com.zaxxer" % "HikariCP" % "5.0.1"
 
+  val InMemoryDB = "com.h2database" % "h2" % "1.4.197"
+
+  val testcontainersScalaVersion = "0.40.12"
+  val ScalaTestContainer = "com.dimafeng" %% "testcontainers-scala-scalatest" % testcontainersScalaVersion
+  val MariaDBTestContainer = "com.dimafeng" %% "testcontainers-scala-mariadb" % testcontainersScalaVersion
 }

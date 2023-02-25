@@ -20,9 +20,9 @@ class AddressJDBCDAO(implicit datasource: Datasource) extends AddressDAO {
                        |  building_name         varchar(50),
                        |  apartment_number      varchar(10),
                        |  is_primary_address    boolean NOT NULL,
-                       |  created_at            datetime DEFAULT CURRENT_TIMESTAMP;
-                       |  UNIQUE (fk_customer_profile, city, province, town, street, lot, block, building_name, apartment_number)
-                       |  FOREIGN KEY fk_customer_profile REFERENCES CUSTOMER_PROFILE(id)
+                       |  created_at            datetime DEFAULT CURRENT_TIMESTAMP,
+                       |  UNIQUE (fk_customer_profile, city, province, town, street, lot, block, building_name, apartment_number),
+                       |  FOREIGN KEY (fk_customer_profile) REFERENCES CUSTOMER_PROFILE(id)
                        |) engine=InnoDB DEFAULT CHARSET=utf8;
                        |""".stripMargin
 

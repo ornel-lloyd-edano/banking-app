@@ -1,14 +1,23 @@
 package bank.domain
 
-import bank.persistence.{AccountDAO, Address, AddressDAO, CustomerProfileDAO, HikariCPDatasource, ReadAccount, Transaction, JDBCTransactionImpl}
+import akka.actor.ActorSystem
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpHeader, HttpMethods, HttpRequest, HttpResponse, Uri}
+import akka.stream.{ActorMaterializer, Materializer}
+import bank.domain.exceptions.ValidationException
+import bank.persistence.{AccountDAO, Address, AddressDAO, CustomerProfileDAO, HikariCPDatasource, JDBCTransactionImpl, ReadAccount, Transaction}
 import com.typesafe.config.Config
 import spray.json.DefaultJsonProtocol._
 import spray.json.{DeserializationException, JsString, JsValue, RootJsonFormat}
 
+import java.net.URLEncoder
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
+import java.util.UUID
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
+import scala.concurrent.duration._
 
 case class CustomerProfile(
   customerFirstName: String,
@@ -25,58 +34,139 @@ case class CustomerProfile(
   accounts: List[Account]
 ) {
 
-  def validateFirstName: Try[Unit] = ???
+  def validateContactNumber(implicit actorSystem: ActorSystem,  mat: Materializer, config: Config, ec: ExecutionContext): Future[Try[Unit]] = {
+    println("validating contact number")
 
-  def validateMiddleName: Try[Unit] = ???
+    (for {
+      host <- Try(config.getString("banking-app.phone-number-service.host"))
+      port <- Try(config.getString("banking-app.phone-number-service.port"))
+      path <- Try(config.getString("banking-app.phone-number-service.validator-path"))
+      hostWithQueryParam = s"http://$host:$port$path?contactNum=${this.contactNumber.value}&country=Philippines"
+      getRequest <- Try(HttpRequest(
+        uri = Uri(hostWithQueryParam),
+        headers = List(RawHeader("Authorization", "123456")) //JWT later
+      ))
+    } yield {
+      Http().singleRequest(getRequest).flatMap {
+        case HttpResponse(code, _, _, _) if code.intValue() >= 200 && code.intValue() < 400 =>
+          println("got OK response from mobile number validator service")
+          Future.successful(Success( () ))
 
-  def validateLastName: Try[Unit] = ???
+        case HttpResponse(code, _, content, _) =>
+          println(s"status $code got error response from mobile number validator service")
+          content.httpEntity.toStrict(2000.milli).map { strict=>
+            Failure(new Exception(strict.data.utf8String))
+          }
+        case other =>
+          println(s"received other response" + other)
+          Future.successful(Failure(new Exception("Unexpected error")))
 
-  def validateLoginUserName(implicit customerDAO: CustomerProfileDAO, ec: ExecutionContext): Future[Try[Unit]] = {
-    customerDAO.getCustomerProfileByUsername(this.loginUserName).map {
-      case Some(_)=>
-        val isLengthGreaterThanSevenChars = this.loginUserName.length >= 8
-        val areAllCharsLetterOrNumber = loginUserName.forall(char=> char.isLetterOrDigit)
-        val isFirstCharLetter = loginUserName.charAt(0).isLetter
-
-        (isLengthGreaterThanSevenChars, areAllCharsLetterOrNumber, isFirstCharLetter) match {
-          case (false, _, _)=> Failure(new Exception("Login username must be at least 8 characters long"))
-          case (_, false, _)=> Failure(new Exception("Login username must be consist of letters and numbers only"))
-          case (_, _, false)=> Failure(new Exception("Login username must start with a letter"))
-        }
-
-      case None=>
-        Failure(new Exception(s"Customer with username: ${this.loginUserName} not found"))
+      }
+    }) match {
+      case Success(httpResponse)=> httpResponse
+      case Failure(exception) => Future.successful(Failure(exception))
     }
   }
 
-  def validatePassword: Try[Unit] = ???
+  def validateFirstName: Future[Try[Unit]] =
+    Future.successful(Success(()))
 
-  def validateEmail: Try[Unit] = this.email.validate
+  def validateMiddleName: Future[Try[Unit]] = Future.successful(Success(()))
 
-  def validateAccounts: Try[Unit] = ???
+  def validateLastName: Future[Try[Unit]] = Future.successful(Success(()))
 
-  def validate(implicit customerDAO: CustomerProfileDAO, ec: ExecutionContext): Future[Try[Unit]] = {
-    validateLoginUserName.map(_.map { _=>
-      for {
-        _ <- validateFirstName
-        _ <- validateMiddleName
-        _ <- validateLastName
-        _ <- validatePassword
-        _ <- validateEmail
-        result <- validateAccounts
-      } yield result
-    })
+
+  def doesCustomerWithSameUserNameExists(implicit customerDAO: CustomerProfileDAO, ec: ExecutionContext): Future[Boolean] = {
+    customerDAO.getCustomerProfileByUsername(this.loginUserName).map(_.nonEmpty)
   }
 
-  def generateAccountNumber(): String = ???
+  def isUserNameAtLeastThisNumberOfChars(numChars: Int): Boolean = {
+    this.loginUserName.length >= numChars
+  }
+
+  def isUserNameMadeUpOfLetterOrNumberAndLegalSpecialCharacters: Boolean = {
+    this.loginUserName.forall(char=> char.isLetterOrDigit || char == '.')
+  }
+
+  def isUserNameFirstCharALetter: Boolean = {
+    this.loginUserName.charAt(0).isLetter
+  }
+
+  def validateLoginUserName(implicit customerDAO: CustomerProfileDAO, ec: ExecutionContext): Future[Try[Unit]] = {
+    println("validating login username")
+    for {
+      _ <- Future.successful {
+        if(! isUserNameFirstCharALetter)
+          throw new ValidationException(s"Login username [${this.loginUserName}] must start with a letter")
+      }
+
+      _ <- doesCustomerWithSameUserNameExists.map { result=>
+        if (result)
+          throw new ValidationException(s"User with username [${this.loginUserName}] already exists")
+      }
+
+      _ <- Future.successful {
+        if (! isUserNameAtLeastThisNumberOfChars(8))
+          throw new ValidationException(s"Login username [${this.loginUserName}] must be at least 8 characters long")
+      }
+
+      _ <- Future.successful {
+        if(! isUserNameMadeUpOfLetterOrNumberAndLegalSpecialCharacters)
+          throw new ValidationException(s"Login username [${this.loginUserName}] must consist of letters and numbers only")
+      }
+
+    } yield Success(()).recover { case ex=>
+      ex.printStackTrace()
+      Failure(ex)
+    }
+  }
+
+  def validatePassword: Future[Try[Unit]] = Future.successful(Success(()))
+
+  def validateEmail: Future[Try[Unit]] = Future.successful(Success(()))
+
+  def validateAccounts: Future[Try[Unit]] = Future.successful(Success(()))
+
+  def validate(implicit customerDAO: CustomerProfileDAO, ec: ExecutionContext, actorSystem: ActorSystem, config: Config): Future[Try[Unit]] = {
+    println("validating")
+    val validUsrName = validateLoginUserName
+    val validFName = validateFirstName
+    val validMName = validateMiddleName
+    val validLName = validateLastName
+    val validPwd = validatePassword
+    val validEmail = validateEmail
+    val validAcc = validateAccounts
+    val validPhoneNum = validateContactNumber
+
+    for {
+      _ <- validUsrName
+      _ <- validFName
+      _ <- validMName
+      _ <- validLName
+      _ <- validPwd
+      _ <- validEmail
+      _ <- validPhoneNum
+      result <- validAcc
+    } yield result
+
+  }.recover {
+    case exception: Exception =>
+      exception.printStackTrace()
+      Failure(exception)
+  }
+
+  def generateAccountNumber(): String = UUID.randomUUID().toString
 
   def openAccount(accountType: AccountType)
                  (implicit customerDAO: CustomerProfileDAO,
                   accountDAO: AccountDAO,
                   config: Config,
+                  actorSystem: ActorSystem,
                   ec: ExecutionContext):Future[Try[Unit]] = {
+    println("opening account")
     this.validate.flatMap {
       case Success(_)=>
+        println("valid profile")
         val customerProfileRow = bank.persistence.CustomerProfile(
           customer_first_name = this.customerFirstName,
           customer_middle_name = this.customerMiddleName,
@@ -86,21 +176,15 @@ case class CustomerProfile(
           birth_date = java.sql.Date.valueOf(this.dateOfBirth)
         )
 
-        //C[A].map( A=> B ): C[B]
-        //Future[Int].map( Int=> Future[Try[Unit]] ): Future[  Future[Try[Unit]]   ]
-
-        //C[A].flatMap( A => C[B]): C[B]
-        //Future[Int].flatMap( Int => Future[Try[Unit]] ): Future[ Try[Unit] ]
-
         val txn: Option[Transaction] = Some(new JDBCTransactionImpl(config))
         txn.foreach(_.startTransaction())
 
         txn match {
           case Some(txn)=>
-
             txn.startTransaction().fold(err=> Future.successful(Failure(err)), _=> {
+              println("saving profile to database")
               customerDAO.saveCustomerProfile(customerProfileRow)(Some(txn)).flatMap { customerId=>
-
+                println("profile saved to database")
                 val account = bank.persistence.WriteAccount(
                   fk_customer_profile = customerId,
                   account_number = generateAccountNumber(),
@@ -108,11 +192,16 @@ case class CustomerProfile(
                   account_status = Some(AccountStatus.Pending.toString),
                   balance = None
                 )
-
+                println("saving account to database")
                 accountDAO.saveAccount(customerId, account)(Some(txn))
-                  .map(_.fold(ex=> Failure(new RuntimeException(ex.getMessage)),
-                    _=> txn.endTransaction()
-                  ))
+                  .map(_.fold(ex=> {
+                    println("failed to save account to database")
+                    Failure(new RuntimeException(ex.getMessage))
+                  },
+                    _=> {
+                      println("account saved to database")
+                      txn.endTransaction()
+                    }))
               }
             })
 
@@ -120,7 +209,8 @@ case class CustomerProfile(
             Future.successful(Failure(new RuntimeException("no avail txn")))
         }
 
-      case fail: Failure[_]=>
+      case fail=>
+        println(s"validation failed: $fail")
         Future.successful(fail)
     }
   }
@@ -128,75 +218,72 @@ case class CustomerProfile(
 
 object CustomerProfile {
 
+  def toDomain(customerProfile: bank.persistence.CustomerProfile,
+               gender: Gender,
+               addressList: Seq[Address],
+               account: ReadAccount
+              ): CustomerProfile = {
+    CustomerProfile(
+      customerFirstName = customerProfile.customer_first_name,
+      customerMiddleName = customerProfile.customer_middle_name,
+      customerLastName = customerProfile.customer_last_name,
+      loginUserName = customerProfile.login_username,
+      password = "",
+      gender = gender,
+      dateOfBirth = customerProfile.birth_date.toLocalDate,
+      address =
+        addressList.find(_.is_primary_address == true).map { primaryAddress=>
+          val secondaryAddress: Option[Address] = Try {
+            addressList.filterNot(_.is_primary_address == true)
+              .sortBy(_.created_at).last
+          }.toOption
+
+          FullAddress(
+            FullAddress.fromDAO(primaryAddress),
+            secondaryAddress.map(FullAddress.fromDAO)
+          )
+      },
+      email = null, //TODO read/write 'email' from/to CONTACT_DETAILS table
+      contactNumber = null, //TODO read/write 'contactNumber' from/to CONTACT_DETAILS table
+      documents = Nil, //TODO read/write 'documents' from/to CUSTOMER_DOCUMENTS table
+      accounts = (account.account_status, account.balance) match {
+        case (Some(accStatus), Some(balance))=>
+          List(
+            Account(
+              accountNumber = account.account_number,
+              accountType = AccountType.fromString(account.account_type),
+              status = AccountStatus.fromString(accStatus),
+              balance = balance
+            )
+          )
+        case _ => Nil
+      }
+    )
+  }
+
+
   def searchByAccountNumber(accNum: String)
                            (implicit customerDAO: CustomerProfileDAO,
                             accountDAO: AccountDAO,
                             addressDAO: AddressDAO,
-                            ec: ExecutionContext)
-  :Future[Option[Try[CustomerProfile]]] = {
+                            ec: ExecutionContext):Future[Option[Try[CustomerProfile]]] = {
+    for {
+      account <- accountDAO.getAccount(accNum)
+        .map(_.fold[ReadAccount] (throw new Exception("Account not found")) (identity))
 
-    accountDAO.getAccount(accNum).flatMap {
-      case Some(account)=>
-        account.fk_customer_profile match {
-          case Some(customerId)=>
-            customerDAO.getCustomerProfileById(customerId).flatMap {
-              case Some(bank.persistence.CustomerProfile( Some(customerId), firstName, midName, lastName, gender, bDate, loginUsr)) =>
-                addressDAO.getAddress(customerId).map {
-                  case maybeAddresses=>
-                    Gender.fromString(gender) match {
-                      case Success(gender)=>
-                        Some(Success(CustomerProfile(
-                          customerFirstName = firstName,
-                          customerMiddleName = midName,
-                          customerLastName = lastName,
-                          loginUserName = loginUsr,
-                          password = "",
-                          gender = gender,
-                          dateOfBirth = bDate.toLocalDate,
-                          address = maybeAddresses.find(_.is_primary_address == true).map { primaryAddress=>
-                            val secondaryAddress: Option[Address] = Try {
-                              maybeAddresses.filterNot(_.is_primary_address == true)
-                                .sortBy(_.created_at).last
-                            }.toOption
+      customerId <- account.fk_customer_profile
+        .fold[Future[Int]] (Future.failed(new Exception("Has account but empty customer profile foreign key"))) (Future.successful(_))
 
-                            FullAddress(
-                              FullAddress.fromDAO(primaryAddress),
-                              secondaryAddress.map(FullAddress.fromDAO)
-                            )
-                          },
-                          email = null, //TODO read/write 'email' from/to CONTACT_DETAILS table
-                          contactNumber = null, //TODO read/write 'contactNumber' from/to CONTACT_DETAILS table
-                          documents = Nil, //TODO read/write 'documents' from/to CUSTOMER_DOCUMENTS table
-                          accounts = (account.account_status, account.balance) match {
-                            case (Some(accStatus), Some(balance))=>
-                              List(
-                                Account(
-                                  accountNumber = account.account_number,
-                                  accountType = AccountType.fromString(account.account_type),
-                                  status = AccountStatus.fromString(accStatus),
-                                  balance = balance
-                                )
-                              )
-                            case _ => Nil
-                          }
-                        )))
-                      case Failure(ex)=>
-                        Some(Failure(ex))
-                    }
-                }
+      customerProfile <- customerDAO.getCustomerProfileById(customerId)
+        .map(_.fold[bank.persistence.CustomerProfile] (throw new Exception("Profile not found")) (identity) )
 
-              case Some(_)=>
-                Future.successful(Some(Failure(new IllegalStateException("Primary key is missing"))))
-              case None=>
-                Future.successful(None)
-            }
-          case None=>
-            Future.successful(None)
-        }
-      case None=>
-        Future.successful(None)
+      addressList <- addressDAO.getAddress(customerId)
+
+      gender <- Gender.fromString(customerProfile.gender).fold(ex=> Future.failed(ex), Future.successful(_))
+    } yield {
+      Option(Try(toDomain(customerProfile, gender, addressList, account)))
     }
-  }
+  }//end
 
 
   implicit val localDateFormat: RootJsonFormat[LocalDate] = new RootJsonFormat[LocalDate] {

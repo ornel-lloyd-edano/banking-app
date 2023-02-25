@@ -14,7 +14,7 @@ case class RegisterAccount(
                             password: String,
                             gender: Gender,
                             dateOfBirth: LocalDate,
-                            address: FullAddress,
+                            address: Option[FullAddress],
                             email: String,
                             contactNumber: String,
                             accountType: AccountType

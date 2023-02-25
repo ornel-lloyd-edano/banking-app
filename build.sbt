@@ -17,7 +17,22 @@ lazy val root = (project in file("."))
       TypeSafeConfig,
       MariaDB,
       HikariCP) ++ Swagger,
-    libraryDependencies ++= List(scalaTest % Test, AkkaStreamTest % Test, AkkaHttpTest % Test)
+    libraryDependencies ++= List(
+      scalaTest,
+      AkkaStreamTest,
+      AkkaHttpTest,
+      InMemoryDB,
+      ScalaTestContainer,
+      MariaDBTestContainer
+    ).map(_ % Test)
   )
 
 // See https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html for instructions on how to publish to Sonatype.
+coverageEnabled := true
+coverageFailOnMinimum := true
+coverageMinimumStmtTotal := 90
+coverageMinimumBranchTotal := 90
+coverageMinimumStmtPerPackage := 90
+coverageMinimumBranchPerPackage := 85
+coverageMinimumStmtPerFile := 85
+coverageMinimumBranchPerFile := 80

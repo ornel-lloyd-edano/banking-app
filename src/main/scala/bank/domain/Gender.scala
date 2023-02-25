@@ -26,11 +26,12 @@ object Gender {
     override def read(json: JsValue): Gender = {
       json match {
         case JsString(value)=>
-          value match {
+          fromString(value).fold(_=> throw DeserializationException(s"Gender [$value] is not recognized"), identity(_))
+          /*value match {
             case "Male"=> Male
             case "Female"=> Female
             case other=> throw DeserializationException(s"Gender [$other] is not recognized")
-          }
+          }*/
         case _=> throw DeserializationException("Gender must be JsString")
       }
     }

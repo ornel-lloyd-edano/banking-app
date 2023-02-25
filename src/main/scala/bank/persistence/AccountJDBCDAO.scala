@@ -3,7 +3,7 @@ package bank.persistence
 import bank.domain.{AccountStatus, AccountType}
 
 import scala.concurrent.Future
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 import scala.concurrent.ExecutionContext.Implicits.global
 
 class AccountJDBCDAO(implicit datasource: Datasource) extends AccountDAO {
@@ -16,7 +16,7 @@ class AccountJDBCDAO(implicit datasource: Datasource) extends AccountDAO {
                        |  account_type          varchar(20) NOT NULL,
                        |  account_status        varchar(20),
                        |  balance               decimal(12,2),
-                       |  FOREIGN KEY fk_customer_profile REFERENCES CUSTOMER_PROFILE(id)
+                       |  FOREIGN KEY (fk_customer_profile) REFERENCES CUSTOMER_PROFILE(id)
                        |) engine=InnoDB DEFAULT CHARSET=utf8;
                        |""".stripMargin
 
@@ -39,17 +39,36 @@ class AccountJDBCDAO(implicit datasource: Datasource) extends AccountDAO {
             |VALUES (?, ?, ?, ?, ?)
             |""".stripMargin)
 
+        println(s"customerId = $customerId")
         statement.setInt(1, customerId)
         statement.setString(2, account.account_number)
         statement.setString(3, account.account_type)
         account.account_status.foreach(value=> statement.setString(4, value))
-        account.balance.foreach(value=> statement.setBigDecimal(5, value.bigDecimal))
+
+        account.balance match {
+          case Some(value)=>
+            statement.setBigDecimal(5, value.bigDecimal)
+          case None =>
+            statement.setBigDecimal(5, new java.math.BigDecimal(0.0))
+        }
+
         statement.execute()
 
         val statement2 = conn.createStatement()
-        val resultSet = statement2.executeQuery(s"SELECT id FROM ACCOUNT WHERE account_number = ${account.account_number}")
-        resultSet.getInt("id")
+        val resultSet = statement2.executeQuery(s"SELECT id FROM ACCOUNT WHERE account_number = '${account.account_number}' ")
+        resultSet.first()
+        resultSet.getLong("id")
+      } match {
+        case Success(value)=> Success(value.toInt)
+        case Failure(exception)=>
+          exception.printStackTrace()
+          Failure(exception)
       }
+
+    }.recover {
+      case exception: Exception=>
+        exception.printStackTrace()
+        Failure(exception)
     }
   }
 
