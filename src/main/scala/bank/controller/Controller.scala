@@ -20,7 +20,8 @@ import jakarta.ws.rs._
 import spray.json._
 
 import java.time.LocalDate
-import scala.concurrent.{ExecutionContext, Future}
+import java.util.concurrent.{ExecutorService, Executors}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.util.{Failure, Success, Try}
 
 
@@ -61,8 +62,9 @@ class Controller(implicit ec: ExecutionContext,
           documents = List(),
           accounts = List()
         )
+        val writeEC: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(10))
 
-        onComplete( customerProfile.openAccount(registerAccount.accountType).map(_.get) ) {
+        onComplete( customerProfile.openAccount(registerAccount.accountType)(customerProfileDAO, accountDAO, config, actorSystem, writeEC).map(_.get) ) {
           case Success(_)=>
             complete(Created, "Account created".toJson)
           case Failure(ex: ValidationException)=>
@@ -73,6 +75,8 @@ class Controller(implicit ec: ExecutionContext,
       }
     }
   }
+
+
 
   @GET
   @Path("/api/accounts/{accountNumber}")

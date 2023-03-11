@@ -76,9 +76,14 @@ class CustomerProfileJDBCDAO(implicit val datasource: Datasource) extends Custom
 
       statement.setString(1, cp.customer_first_name)
       //NOTE: must prove in unit test that not replacing ? in prepared statement means NULL value in the row
-      cp.customer_middle_name.foreach { middleName=>
-        statement.setString(2, middleName)
+
+      cp.customer_middle_name match {
+        case Some(middlename)=>
+          statement.setString(2, middlename)
+        case None =>
+          statement.setString(2, null)
       }
+
       statement.setString(3, cp.customer_last_name)
       statement.setString(4, cp.login_username)
       statement.setString(5, cp.gender)

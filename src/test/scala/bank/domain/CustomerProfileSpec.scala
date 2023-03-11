@@ -88,7 +88,7 @@ class CustomerProfileSpec extends AnyWordSpec with Matchers with ScalaFutures
       implicit val customerDAO: CustomerProfileDAO = new CustomerProfileJDBCDAO
       val invalidUsername = "qwerty123"
       val mockCustomer = mockCustomerProfile.copy(loginUserName = invalidUsername)
-      val result = mockCustomer.validateLoginUserName
+      val result: Future[Try[Unit]] = mockCustomer.validateLoginUserName
       whenReady(result) {
         case Failure(result)=>
           result.getMessage mustBe s"User with username [${invalidUsername}] already exists"

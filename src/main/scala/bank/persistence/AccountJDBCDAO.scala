@@ -16,7 +16,7 @@ class AccountJDBCDAO(implicit datasource: Datasource) extends AccountDAO {
                        |  account_type          varchar(20) NOT NULL,
                        |  account_status        varchar(20),
                        |  balance               decimal(12,2),
-                       |  FOREIGN KEY (fk_customer_profile) REFERENCES CUSTOMER_PROFILE(id)
+                       |  FOREIGN KEY (fk_customer_profile) REFERENCES CUSTOMER_PROFILE(id) ON DELETE CASCADE
                        |) engine=InnoDB DEFAULT CHARSET=utf8;
                        |""".stripMargin
 

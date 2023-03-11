@@ -3,8 +3,11 @@ package bank.domain
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.headers.RawHeader
-import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpHeader, HttpMethods, HttpRequest, HttpResponse, Uri}
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpHeader, HttpMethods, HttpRequest, HttpResponse, MediaTypes, Uri}
+import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.{ActorMaterializer, Materializer}
+import akka.util.ByteString
+import bank.controller.dto.RegisterAccount
 import bank.domain.exceptions.ValidationException
 import bank.persistence.{AccountDAO, Address, AddressDAO, CustomerProfileDAO, HikariCPDatasource, JDBCTransactionImpl, ReadAccount, Transaction}
 import com.typesafe.config.Config
@@ -41,10 +44,11 @@ case class CustomerProfile(
       host <- Try(config.getString("banking-app.phone-number-service.host"))
       port <- Try(config.getString("banking-app.phone-number-service.port"))
       path <- Try(config.getString("banking-app.phone-number-service.validator-path"))
+      apiKey <- Try(config.getString("banking-app.phone-number-service.api-key"))
       hostWithQueryParam = s"http://$host:$port$path?contactNum=${this.contactNumber.value}&country=Philippines"
       getRequest <- Try(HttpRequest(
         uri = Uri(hostWithQueryParam),
-        headers = List(RawHeader("Authorization", "123456")) //JWT later
+        headers = List(RawHeader("Authorization", apiKey)) //JWT later
       ))
     } yield {
       Http().singleRequest(getRequest).flatMap {
@@ -125,27 +129,119 @@ case class CustomerProfile(
 
   def validateEmail: Future[Try[Unit]] = Future.successful(Success(()))
 
-  def validateAccounts: Future[Try[Unit]] = Future.successful(Success(()))
+  //calling service from AMLAC to check if customer has red flags
+  def validateAccounts(implicit actorSystem: ActorSystem,  mat: Materializer, config: Config, ec: ExecutionContext): Future[Try[Unit]] = {
+    println("validating account")
+    import spray.json._
+    (for {
+      host <- Try(config.getString("banking-app.amlac-service.host"))
+      port <- Try(config.getString("banking-app.amlac-service.port"))
+      path <- Try(config.getString("banking-app.amlac-service.validator-path"))
+      apiKey <- Try(config.getString("banking-app.amlac-service.api-key"))
+      hostWithQueryParam = s"http://$host:$port$path"
+
+      //first name, last name, email, contact number
+      val jsonRequest = ByteString(
+        s"""
+          |{
+          |  "first_name": "${this.customerFirstName}",
+          |  "last_name": "${this.customerLastName}",
+          |  "email": "${this.email.value}",
+          |  "contact_number": "${this.contactNumber.value}"
+          |}
+          |""".stripMargin
+      )
+
+      postRequest <- Try(HttpRequest(
+        method = HttpMethods.POST,
+        uri = Uri(hostWithQueryParam),
+        entity = HttpEntity(MediaTypes.`application/json`, jsonRequest),
+        headers = List(RawHeader("Authorization", apiKey)) //JWT later
+      ))
+    } yield {
+      Http().singleRequest(postRequest).flatMap {
+        case HttpResponse(code, _, content, _) if code.intValue() >= 200 && code.intValue() < 400 =>
+          content.httpEntity.toStrict(2000.milli).map { strict=>
+            Try {
+              strict.data.utf8String.parseJson.convertTo[AMLACResponse]
+            } match {
+              case Success(response) =>
+                if (response.status == AMLACStatus.Alert) {
+                  Failure(new Exception("Customer has red flag from AMLAC"))
+                } else {
+                  Success(())
+                }
+              case Failure(_)=>
+                Failure(new Exception("Unable to read/parse response from AMLAC"))
+            }
+
+
+          }
+
+          println("got OK response from AMLAC service")
+          Future.successful(Success( () ))
+
+        case HttpResponse(code, _, content, _) =>
+          println(s"status $code got error response from AMLAC service")
+          content.httpEntity.toStrict(2000.milli).map { strict=>
+            val error = strict.data.utf8String.parseJson.convertTo[AMLACErrorResponse]
+            Failure(new Exception(error.message))
+          }
+        case other =>
+          println(s"received other response" + other)
+          Future.successful(Failure(new Exception("Unexpected error")))
+
+      }
+    }) match {
+      case Success(httpResponse)=> httpResponse
+      case Failure(exception) => Future.successful(Failure(exception))
+    }
+
+    ???
+  }
 
   def validate(implicit customerDAO: CustomerProfileDAO, ec: ExecutionContext, actorSystem: ActorSystem, config: Config): Future[Try[Unit]] = {
     println("validating")
-    val validUsrName = validateLoginUserName
-    val validFName = validateFirstName
-    val validMName = validateMiddleName
-    val validLName = validateLastName
-    val validPwd = validatePassword
-    val validEmail = validateEmail
-    val validAcc = validateAccounts
-    val validPhoneNum = validateContactNumber
-
+    val validUsrName: Future[Try[Unit]] = validateLoginUserName
+    val validFName: Future[Try[Unit]] = validateFirstName
+    val validMName: Future[Try[Unit]] = validateMiddleName
+    val validLName: Future[Try[Unit]] = validateLastName
+    val validPwd: Future[Try[Unit]] = validatePassword
+    val validEmail: Future[Try[Unit]] = validateEmail
+    val validAcc: Future[Try[Unit]] = validateAccounts
+    val validPhoneNum: Future[Try[Unit]] = validateContactNumber
+    //1 - use cats core and monad transformer to chain nested monads without regard for outer monad
+    //2 - convert inner monad's negative result to outer monad's negative
+        //ex. Future[Try[Unit]] = Future(Failure(Exception)) -> Future(throw Exception)
     for {
-      _ <- validUsrName
-      _ <- validFName
-      _ <- validMName
-      _ <- validLName
-      _ <- validPwd
-      _ <- validEmail
-      _ <- validPhoneNum
+      _ <- validUsrName.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
+      _ <- validFName.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
+      _ <- validMName.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
+      _ <- validLName.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
+      _ <- validPwd.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
+      _ <- validEmail.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
+      _ <- validPhoneNum.map {
+        case Failure(ex) => throw ex
+        case Success(unit) => unit
+      }
       result <- validAcc
     } yield result
 
